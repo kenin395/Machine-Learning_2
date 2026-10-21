@@ -1,0 +1,277 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Predicción de cáncer</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f1f5f9;
+            color: #1e293b;
+            padding: 25px;
+        }
+
+        main {
+            max-width: 1000px;
+            margin: auto;
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px #00000010;
+        }
+
+        h1 {
+            color: #2563eb;
+        }
+
+        #campos {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 15px;
+        }
+
+        #campos label {
+            display: block;
+            font-size: 13px;
+            font-weight: bold;
+            overflow-wrap: anywhere;
+        }
+
+        input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px;
+            margin-top: 6px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+        }
+
+        button {
+            background: #2563eb;
+            color: white;
+            padding: 12px 20px;
+            margin-top: 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 15px;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: wait;
+        }
+
+        #resultado {
+            margin-top: 20px;
+            padding: 15px;
+            background: #eff6ff;
+            border-radius: 8px;
+            white-space: pre-line;
+        }
+
+        #resultado.benigno {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        #resultado.maligno {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        #resultado.error {
+            background: #fef3c7;
+            color: #92400e;
+        }
+    </style>
+</head>
+
+<body>
+<main>
+    <h1>Predicción de cáncer</h1>
+
+    <p>
+        Introduce los 30 valores de las características del dataset para obtener
+        una estimación del modelo sobre si el caso es maligno o benigno.
+    </p>
+
+    <form id="formulario">
+        <div id="campos">Cargando características...</div>
+        <button id="botonPredecir" type="submit" disabled>
+            Realizar predicción
+        </button>
+    </form>
+
+    <div id="resultado" role="status" aria-live="polite">
+        Conectando con la API...
+    </div>
+</main>
+
+<script>
+    const campos = document.getElementById("campos");
+    const resultado = document.getElementById("resultado");
+    const formulario = document.getElementById("formulario");
+    const boton = document.getElementById("botonPredecir");
+
+    function mostrarMensaje(mensaje, clase = "") {
+        resultado.className = clase;
+        resultado.textContent = mensaje;
+    }
+
+    async function cargarCampos() {
+        boton.disabled = true;
+
+        try {
+            const respuesta = await fetch("/api/caracteristicas");
+
+            if (!respuesta.ok) {
+                throw new Error(
+                    `Error HTTP ${respuesta.status} al cargar las características.`
+                );
+            }
+
+            const datos = await respuesta.json();
+
+            if (!Array.isArray(datos.caracteristicas) ||
+                datos.caracteristicas.length !== 30) {
+                throw new Error(
+                    "La API no devolvió exactamente 30 características."
+                );
+            }
+
+            campos.replaceChildren();
+
+            datos.caracteristicas.forEach((nombre, indice) => {
+                const etiqueta = document.createElement("label");
+                etiqueta.textContent = `${indice + 1}. ${nombre}`;
+
+                const input = document.createElement("input");
+                input.type = "number";
+                input.step = "any";
+                input.required = true;
+                input.name = `valor_${indice}`;
+                input.id = `valor_${indice}`;
+                input.placeholder = "Introduce un valor";
+
+                etiqueta.appendChild(input);
+                campos.appendChild(etiqueta);
+            });
+
+            boton.disabled = false;
+
+            mostrarMensaje(
+                "Se cargaron correctamente las 30 características. Completa los campos para continuar."
+            );
+
+            console.log("Características cargadas:", datos.caracteristicas);
+
+        } catch (error) {
+            mostrarMensaje(
+                "No se pudieron cargar las características.\n" +
+                error.message +
+                "\nComprueba que Flask esté ejecutándose y revisa la consola.",
+                "error"
+            );
+
+            console.error("Error al cargar características:", error);
+        }
+    }
+
+    formulario.addEventListener("submit", async (evento) => {
+        evento.preventDefault();
+
+        const entradas = campos.querySelectorAll("input");
+
+        if (entradas.length !== 30) {
+            mostrarMensaje(
+                "No se han cargado correctamente las 30 características.",
+                "error"
+            );
+            return;
+        }
+
+        const valores = [];
+
+        for (const entrada of entradas) {
+            if (entrada.value.trim() === "") {
+                mostrarMensaje("Completa todos los campos.", "error");
+                entrada.focus();
+                return;
+            }
+
+            const numero = Number(entrada.value);
+
+            if (!Number.isFinite(numero)) {
+                mostrarMensaje(
+                    "Introduce únicamente valores numéricos válidos.",
+                    "error"
+                );
+                entrada.focus();
+                return;
+            }
+
+            valores.push(numero);
+        }
+
+        boton.disabled = true;
+        mostrarMensaje("Procesando predicción...");
+
+        try {
+            const respuesta = await fetch("/api/predecir", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ valores })
+            });
+
+            const datos = await respuesta.json();
+
+            if (!respuesta.ok) {
+                throw new Error(
+                    datos.error || `Error HTTP ${respuesta.status}.`
+                );
+            }
+
+            
+const claseResultado =
+    (datos.resultado || "").toLowerCase() === "benigno"
+        ? "benigno"
+        : "maligno";
+
+mostrarMensaje(
+    `Resultado del modelo: ${datos.resultado}\n` +
+    `Código de clase: ${datos.prediccion}\n` +
+    `Probabilidad estimada de malignidad: ${datos.probabilidad_maligno}%\n` +
+    `Probabilidad estimada de benignidad: ${datos.probabilidad_benigno}%\n` +
+    `Exactitud de prueba: ${(datos.exactitud_prueba * 100).toFixed(2)}%\n\n` +
+    datos.mensaje,
+    claseResultado
+);
+
+
+        } catch (error) {
+            mostrarMensaje(
+                "Error al realizar la predicción:\n" + error.message,
+                "error"
+            );
+
+            console.error("Error en la predicción:", error);
+
+        } finally {
+            boton.disabled = false;
+        }
+    });
+
+    cargarCampos();
+</script>
+</body>
+</html>
